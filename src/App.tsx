@@ -1,26 +1,21 @@
-import { useEffect, useRef, useState } from "react";
-import { getHealth, streamChat } from "./api";
-import type { ChatMessage, Health } from "./types";
+import { useEffect, useState } from "react";
+import { getHealth } from "./api";
+import Chat from "./components/Chat";
+import Exercises from "./components/Exercises";
+import Progress from "./components/Progress";
+import type { Health } from "./types";
 
-const GREETING =
-  "Cześć! Jestem twoim polskim rozmówcą. Napisz do mnie po polsku — poprawię cię po cichu, kiedy trzeba. Zaczynamy?";
+type Tab = "chat" | "exercises" | "progress";
 
-const SUGGESTIONS = [
-  "Cześć, jak się masz?",
-  "Idę dziś do kawiarni.",
-  "Nie rozumiem, możesz powtórzyć?",
+const TABS: { id: Tab; icon: string; label: string; hint: string }[] = [
+  { id: "chat", icon: "💬", label: "Chat", hint: "Free conversation" },
+  { id: "exercises", icon: "✎", label: "Exercises", hint: "Structured practice" },
+  { id: "progress", icon: "◔", label: "Progress", hint: "What you keep missing" },
 ];
 
 export default function App() {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: "assistant", content: GREETING },
-  ]);
-  const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [tab, setTab] = useState<Tab>("chat");
   const [health, setHealth] = useState<Health | null>(null);
-
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     getHealth()
@@ -30,139 +25,60 @@ export default function App() {
       );
   }, []);
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages, busy]);
-
-  async function send(text: string) {
-    const trimmed = text.trim();
-    if (!trimmed || busy) return;
-
-    const next: ChatMessage[] = [...messages, { role: "user", content: trimmed }];
-    setMessages([...next, { role: "assistant", content: "" }]);
-    setInput("");
-    setBusy(true);
-
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    try {
-      for await (const piece of streamChat(next, controller.signal)) {
-        setMessages((prev) => {
-          const copy = [...prev];
-          const last = copy[copy.length - 1];
-          copy[copy.length - 1] = { ...last, content: last.content + piece };
-          return copy;
-        });
-      }
-    } catch (err) {
-      if (!controller.signal.aborted) {
-        setMessages((prev) => {
-          const copy = [...prev];
-          const last = copy[copy.length - 1];
-          copy[copy.length - 1] = {
-            ...last,
-            content: last.content || `⚠️ ${(err as Error).message}`,
-          };
-          return copy;
-        });
-      }
-    } finally {
-      setBusy(false);
-      abortRef.current = null;
-    }
-  }
-
-  function reset() {
-    abortRef.current?.abort();
-    setMessages([{ role: "assistant", content: GREETING }]);
-    setInput("");
-  }
-
   const modelMissing = health?.ok && health.modelPresent === false;
 
   return (
-    <div className="app">
-      <header className="topbar">
-        <div className="brand">
+    <div className="layout">
+      <nav className="sidebar">
+        <div className="logo">
+          <span className="dotmark" />
           poligem
-          <span className="tagline">Polish conversation practice</span>
         </div>
-        <div className="status">
+
+        <div className="nav">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              className={tab === t.id ? "nav-item active" : "nav-item"}
+              onClick={() => setTab(t.id)}
+            >
+              <span className="nav-icon">{t.icon}</span>
+              <span className="nav-text">
+                <span className="nav-label">{t.label}</span>
+                <span className="nav-hint">{t.hint}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+
+        <div className="side-foot">
           {health === null ? (
             <span className="dot checking">checking…</span>
           ) : health.ok ? (
-            <span className="dot ok">
+            <span className="dot ok" title={`Ollama on ${health.model}`}>
               {health.model}
-              {modelMissing ? " · not pulled" : " · ready"}
+              {modelMissing ? " · not pulled" : ""}
             </span>
           ) : (
             <span className="dot bad" title={health.error}>
               offline
             </span>
           )}
-          <button onClick={reset} className="reset">
-            New conversation
-          </button>
+          <span className="side-note">runs entirely on your machine</span>
         </div>
-      </header>
+      </nav>
 
-      {modelMissing && (
-        <div className="banner">
-          Model <code>{health?.model}</code> isn&apos;t installed. Run{" "}
-          <code>ollama pull {health?.model}</code>.
-        </div>
-      )}
-
-      <main className="thread">
-        {messages.map((m, i) => (
-          <div key={i} className={`msg ${m.role}`}>
-            <span className="who">{m.role === "user" ? "you" : "poligem"}</span>
-            <p>{m.content}</p>
-          </div>
-        ))}
-
-        {busy && (
-          <div className="msg assistant">
-            <span className="who">poligem</span>
-            <p className="thinking">
-              <span />
-              <span />
-              <span />
-            </p>
+      <main className="content">
+        {modelMissing && (
+          <div className="banner">
+            Model <code>{health?.model}</code> isn&apos;t installed. Run{" "}
+            <code>ollama pull {health?.model}</code>.
           </div>
         )}
-        <div ref={bottomRef} />
+        {tab === "chat" && <Chat />}
+        {tab === "exercises" && <Exercises />}
+        {tab === "progress" && <Progress />}
       </main>
-
-      {messages.length <= 1 && (
-        <div className="suggestions">
-          {SUGGESTIONS.map((s) => (
-            <button key={s} onClick={() => send(s)} disabled={busy}>
-              {s}
-            </button>
-          ))}
-        </div>
-      )}
-
-      <form
-        className="composer"
-        onSubmit={(e) => {
-          e.preventDefault();
-          send(input);
-        }}
-      >
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Napisz po polsku…"
-          disabled={busy}
-          autoFocus
-        />
-        <button type="submit" disabled={busy || !input.trim()}>
-          {busy ? "…" : "Send"}
-        </button>
-      </form>
     </div>
   );
 }

@@ -1,4 +1,21 @@
-import type { ChatMessage, Health } from "./types";
+import type { ChatMessage, ExerciseSet, ExerciseType, Health } from "./types";
+
+export async function fetchExercises(
+  type: ExerciseType,
+  count = 5,
+  weakWords: string[] = [],
+): Promise<ExerciseSet> {
+  const res = await fetch("/api/exercise", {
+    method: "POST",
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+    body: JSON.stringify({ type, count, weakWords }),
+  });
+  const data = await res.json();
+  if (!Array.isArray(data?.exercises)) {
+    throw new Error(data?.error ?? `No exercises returned for ${type}`);
+  }
+  return data as ExerciseSet;
+}
 
 export async function getHealth(): Promise<Health> {
   const res = await fetch("/api/health");

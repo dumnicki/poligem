@@ -12,3 +12,26 @@ export type Health = {
   models?: string[];
   error?: string;
 };
+
+export type ExerciseType = "en2pl" | "pl2en" | "cloze" | "order";
+
+export type Exercise = {
+  type: ExerciseType;
+  prompt: string;
+  answer: string;
+  explanation?: string;
+};
+
+export type ExerciseSet = {
+  source: "generated" | "seed";
+  type: ExerciseType;
+  exercises: Exercise[];
+};
+
+export type Attempt = {
+  type: ExerciseType;
+  prompt: string;
+  answer: string;
+  correct: boolean;
+  at: number;
+};
