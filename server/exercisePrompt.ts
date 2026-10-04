@@ -9,7 +9,7 @@
  * Explanations are written in short, simple Polish on purpose — each one doubles
  * as reading practice for the learner.
  */
-export type ExerciseType = "en2pl" | "pl2en" | "cloze" | "order";
+export type ExerciseType = "en2pl" | "pl2en" | "cloze";
 
 export type Exercise = {
   type: ExerciseType;
@@ -18,13 +18,12 @@ export type Exercise = {
   explanation?: string;
 };
 
-export const EXERCISE_TYPES: ExerciseType[] = ["en2pl", "pl2en", "cloze", "order"];
+export const EXERCISE_TYPES: ExerciseType[] = ["en2pl", "pl2en", "cloze"];
 
 export const EXERCISE_LABELS: Record<ExerciseType, string> = {
   en2pl: "English → Polish",
   pl2en: "Polish → English",
   cloze: "Fill the gap",
-  order: "Put it in order",
 };
 
 export const EXERCISE_SYSTEM_PROMPT = `Jesteś nauczycielem języka polskiego. Tworzysz krótkie ćwiczenia dla osoby na poziomie A2.
@@ -44,7 +43,6 @@ Reguły dla każdego typu:
 en2pl: "prompt" to zdanie po angielsku, "answer" to jego poprawne tłumaczenie po polsku.
 pl2en: "prompt" to zdanie po polsku, "answer" to jego poprawne tłumaczenie po angielsku.
 cloze: "prompt" to pełne zdanie po polsku, BEZ żadnych podkreśleń. "answer" to jedno słowo z tego zdania, które można bezpiecznie usunąć (nie rzeczownik w pierwszej pozycji).
-order: "prompt" to polskie zdanie z pomieszanymi słowami, oddzielonymi pojedynczą spacją. "answer" to to samo zdanie w poprawnej kolejności słów.
 
 Zasady:
 - Zdania krótkie, 4-9 słów. Codzienne tematy: jedzenie, zakupy, miasto, praca, rodzina, pogoda, podróże.

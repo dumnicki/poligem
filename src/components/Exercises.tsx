@@ -14,7 +14,6 @@ const TYPES: { id: ExerciseType; label: string; blurb: string }[] = [
   { id: "en2pl", label: "English → Polish", blurb: "Read Polish, say it in English" },
   { id: "pl2en", label: "Polish → English", blurb: "Read English, say it in Polish" },
   { id: "cloze", label: "Fill the gap", blurb: "One missing word in a Polish sentence" },
-  { id: "order", label: "Put it in order", blurb: "Rebuild the Polish sentence" },
 ];
 
 export default function Exercises() {
@@ -130,9 +129,6 @@ export default function Exercises() {
               <p className="prompt-text">{current.prompt}</p>
               {current.type === "cloze" && (
                 <p className="hint">Type the missing word only.</p>
-              )}
-              {current.type === "order" && (
-                <p className="hint">Type the sentence in the correct order.</p>
               )}
             </div>
 

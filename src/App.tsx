@@ -75,9 +75,21 @@ export default function App() {
             <code>ollama pull {health?.model}</code>.
           </div>
         )}
-        {tab === "chat" && <Chat />}
-        {tab === "exercises" && <Exercises />}
-        {tab === "progress" && <Progress />}
+        {/*
+          All three panels stay mounted; only visibility toggles. Switching tabs
+          therefore preserves the chat transcript, the generated exercise queue,
+          and in-progress drill state, instead of regenerating ~25s of exercises
+          every time the user glances at their progress.
+        */}
+        <div className="panel" hidden={tab !== "chat"}>
+          <Chat />
+        </div>
+        <div className="panel" hidden={tab !== "exercises"}>
+          <Exercises />
+        </div>
+        <div className="panel" hidden={tab !== "progress"}>
+          <Progress />
+        </div>
       </main>
     </div>
   );

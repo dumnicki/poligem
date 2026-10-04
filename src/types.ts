@@ -13,7 +13,7 @@ export type Health = {
   error?: string;
 };
 
-export type ExerciseType = "en2pl" | "pl2en" | "cloze" | "order";
+export type ExerciseType = "en2pl" | "pl2en" | "cloze";
 
 export type Exercise = {
   type: ExerciseType;

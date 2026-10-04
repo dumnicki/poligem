@@ -145,6 +145,19 @@ code {
   max-width: 860px;
 }
 
+/*
+ * Panels stay mounted so tab switches preserve state. `display: flex` here
+ * would otherwise beat the browser's default `[hidden] { display: none }`
+ * and show all three panels at once — hence the explicit override.
+ */
+.panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.panel[hidden] { display: none; }
+
 .panel-head {
   display: flex;
   align-items: center;

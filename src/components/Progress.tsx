@@ -6,7 +6,6 @@ const LABELS: Record<ExerciseType, string> = {
   en2pl: "English → Polish",
   pl2en: "Polish → English",
   cloze: "Fill the gap",
-  order: "Put it in order",
 };
 
 export default function Progress() {

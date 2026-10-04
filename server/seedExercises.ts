@@ -105,36 +105,4 @@ export const SEED_EXERCISES: Record<ExerciseType, Exercise[]> = {
       explanation: "Rozumieć — 'nie' przed czasownikiem odmienia jak przymiotnik.",
     },
   ],
-  order: [
-    {
-      type: "order",
-      prompt: "kawiarni idę do",
-      answer: "Idę do kawiarni",
-      explanation: "Kolejność: podmiot, czasownik, przyimek, reszta.",
-    },
-    {
-      type: "order",
-      prompt: "polski język bardzo lubię",
-      answer: "Bardzo lubię polski język",
-      explanation: "Bardzo lubię — czasownik po przysłówku.",
-    },
-    {
-      type: "order",
-      prompt: "jutro jadę pociągiem do Krakowa",
-      answer: "Jutro jadę pociągiem do Krakowa",
-      explanation: "Czas na początku: jutro.",
-    },
-    {
-      type: "order",
-      prompt: "się bardzo dobrze bawię",
-      answer: "Bawię się bardzo dobrze",
-      explanation: "Bawić się zawsze z 'się'.",
-    },
-    {
-      type: "order",
-      prompt: "mam na imię Kasia",
-      answer: "Mam na imię Kasia",
-      explanation: "Mam na imię — 'na' + accusativum.",
-    },
-  ],
 };

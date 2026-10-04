@@ -62,7 +62,7 @@ export type Stats = {
   recent: Attempt[];
 };
 
-const TYPES: ExerciseType[] = ["en2pl", "pl2en", "cloze", "order"];
+const TYPES: ExerciseType[] = ["en2pl", "pl2en", "cloze"];
 
 export function computeStats(attempts: Attempt[]): Stats {
   const byType = Object.fromEntries(
