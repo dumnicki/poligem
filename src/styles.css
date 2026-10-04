@@ -391,6 +391,9 @@ code {
 .recent-list .what { flex: 1; overflow-wrap: anywhere; }
 .recent-list .right { color: var(--good); font-size: 0.8rem; }
 
+/* Stop control shown under a streaming reply, once the dots have gone. */
+.stop-row { align-self: flex-start; }
+
 /* ---------- chat: translation affordance ---------- */
 .translate-btn {
   align-self: flex-start;

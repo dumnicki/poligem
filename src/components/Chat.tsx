@@ -27,6 +27,15 @@ export default function Chat({ level }: { level: Level }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
+  /**
+   * True once the in-flight reply has produced its first token.
+   *
+   * Derived rather than stored, so it cannot drift out of sync with the
+   * messages it describes.
+   */
+  const last = messages[messages.length - 1];
+  const hasStreamed = busy && !!last?.content;
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, busy]);
@@ -165,20 +174,16 @@ export default function Chat({ level }: { level: Level }) {
       </div>
 
       <div className="thread">
-        {loadingScenario && (
-          <div className="msg assistant">
-            <span className="who">poligem</span>
-            <p className="thinking" aria-label="Preparing a situation">
-              <span />
-              <span />
-              <span />
-            </p>
-          </div>
-        )}
-
         {messages.map((m, i) => (
           <div key={i} className={`msg ${m.role} ${!m.content ? "pending" : ""}`}>
-            <span className="who">{m.role === "user" ? "you" : "poligem"}</span>
+            {/*
+              No label for an empty placeholder: the thinking indicator below
+              already carries the "poligem" attribution, and two of them stacked
+              read as two speakers.
+            */}
+            {m.content && (
+              <span className="who">{m.role === "user" ? "you" : "poligem"}</span>
+            )}
             {/*
               While a reply streams in, its bubble is still empty. Giving it a
               border and padding renders a second, empty box right above the
@@ -219,7 +224,12 @@ export default function Chat({ level }: { level: Level }) {
           </div>
         ))}
 
-        {busy && (
+        {/*
+          Thinking dots only until the first token arrives. The last message is
+          the placeholder while the reply streams, so once it has text there is
+          nothing to indicate — the text itself is the progress.
+        */}
+        {busy && !hasStreamed && (
           <div className="msg assistant">
             <span className="who">poligem</span>
             <p className="thinking">
@@ -227,9 +237,31 @@ export default function Chat({ level }: { level: Level }) {
               <span />
               <span />
             </p>
+          </div>
+        )}
+
+        {/* Stop stays available for the whole reply, dots or not. */}
+        {busy && hasStreamed && (
+          <div className="msg assistant stop-row">
             <button className="translate-btn" onClick={stop}>
               Stop
             </button>
+          </div>
+        )}
+
+        {/*
+          The scenario indicator sits below the conversation, because that is
+          where the generated scenario will appear — the greeting stays above it
+          as the intro. Rendering it first put the dots above their own result.
+        */}
+        {loadingScenario && (
+          <div className="msg assistant">
+            <span className="who">poligem</span>
+            <p className="thinking" aria-label="Preparing a situation">
+              <span />
+              <span />
+              <span />
+            </p>
           </div>
         )}
         <div ref={bottomRef} />
