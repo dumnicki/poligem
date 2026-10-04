@@ -1,21 +1,4 @@
-import type { ChatMessage, ExerciseSet, ExerciseType, Health } from "./types";
-
-export async function fetchExercises(
-  type: ExerciseType,
-  count = 5,
-  weakWords: string[] = [],
-): Promise<ExerciseSet> {
-  const res = await fetch("/api/exercise", {
-    method: "POST",
-    headers: { "Content-Type": "application/json; charset=utf-8" },
-    body: JSON.stringify({ type, count, weakWords }),
-  });
-  const data = await res.json();
-  if (!Array.isArray(data?.exercises)) {
-    throw new Error(data?.error ?? `No exercises returned for ${type}`);
-  }
-  return data as ExerciseSet;
-}
+import type { ChatMessage, Exercise, ExerciseType, Health } from "./types";
 
 export async function getHealth(): Promise<Health> {
   const res = await fetch("/api/health");
@@ -69,5 +52,34 @@ export async function* streamChat(
         // incomplete line — will be re-parsed on the next chunk
       }
     }
+  }
+}
+
+/**
+ * The server keeps a pool of ready exercises, so these return from memory
+ * instead of waiting on the model. `/api/exercise/next` is a pool take;
+ * `/api/exercise/report` lets the server learn which prompts the learner misses
+ * so it can refill with targeted material.
+ */
+export async function getNextExercise(type: ExerciseType): Promise<{
+  exercise: Exercise;
+  source: "generated" | "seed";
+  depth: number;
+}> {
+  const res = await fetch(`/api/exercise/next?type=${encodeURIComponent(type)}`);
+  const data = await res.json();
+  if (!data?.exercise) throw new Error(data?.error ?? `No exercise for ${type}`);
+  return data;
+}
+
+export async function reportAnswer(prompt: string, correct: boolean): Promise<void> {
+  try {
+    await fetch("/api/exercise/report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ prompt, correct }),
+    });
+  } catch {
+    // Reporting is an optimisation, not a requirement — never surface a failure.
   }
 }
