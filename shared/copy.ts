@@ -7,7 +7,7 @@
  * code into the client bundle.
  */
 export const GREETING =
-  "Cześć! Wciśnij Nowa sytuacja, a wybiorę dla ciebie scenę do przećwiczenia. Możesz też w każdej chwili zapytać co to znaczy, a przetłumaczę ci zdanie na angielski.";
+  "Cześć! Jestem twoim polskim rozmówcą. Pisz do mnie po polsku — poprawię cię po cichu, kiedy trzeba. Przygotowuję dla ciebie sytuację do przećwiczenia.";
 
 export const FALLBACK_INTRO =
   "Hej! Jestem twoim polskim rozmówcą. Napisz do mnie po polsku, a poprawię cię po cichu.";

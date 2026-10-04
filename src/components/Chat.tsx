@@ -33,15 +33,15 @@ export default function Chat({ level }: { level: Level }) {
 
   // Generate a scenario on mount, but leave the static greeting on screen while
   // it runs. The panel is readable immediately and upgrades itself when ready.
+  //
+  // The scenario is APPENDED, not substituted: the greeting is the first thing
+  // the learner reads, so replacing it would pull text out from under them.
   useEffect(() => {
     let cancelled = false;
     getScenario(level)
       .then(({ text }) => {
-        if (!cancelled) {
-          setMessages([{ role: "assistant", content: text }]);
-          setShown({});
-          setTranslations({});
-        }
+        if (cancelled || !text) return;
+        setMessages((prev) => [...prev, { role: "assistant", content: text }]);
       })
       .catch(() => {
         // Keep the greeting; it is a perfectly good fallback.
@@ -102,6 +102,13 @@ export default function Chat({ level }: { level: Level }) {
     setBusy(false);
   }
 
+  /**
+   * Starts a fresh scenario.
+   *
+   * The greeting is deliberately dropped here — unlike the automatic load on
+   * mount, this is an explicit "start over", so keeping a welcome message from
+   * the previous round would just be noise.
+   */
   async function newScenario() {
     if (busy) return;
     abortRef.current?.abort();
@@ -109,7 +116,7 @@ export default function Chat({ level }: { level: Level }) {
     setTranslations({});
     setShown({});
     setInput("");
-    setMessages([{ role: "assistant", content: GREETING }]);
+    setMessages([]);
     try {
       const { text } = await getScenario(level);
       setMessages([{ role: "assistant", content: text }]);
@@ -158,6 +165,17 @@ export default function Chat({ level }: { level: Level }) {
       </div>
 
       <div className="thread">
+        {loadingScenario && (
+          <div className="msg assistant">
+            <span className="who">poligem</span>
+            <p className="thinking" aria-label="Preparing a situation">
+              <span />
+              <span />
+              <span />
+            </p>
+          </div>
+        )}
+
         {messages.map((m, i) => (
           <div key={i} className={`msg ${m.role}`}>
             <span className="who">{m.role === "user" ? "you" : "poligem"}</span>
