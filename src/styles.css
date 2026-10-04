@@ -379,6 +379,56 @@ code {
 .recent-list .what { flex: 1; overflow-wrap: anywhere; }
 .recent-list .right { color: var(--good); font-size: 0.8rem; }
 
+/* ---------- chat: translation affordance ---------- */
+.translate-btn {
+  align-self: flex-start;
+  font-size: 0.72rem;
+  padding: 0.2rem 0.55rem;
+  color: var(--muted);
+  border-radius: 999px;
+}
+.msg.user .translate-btn { align-self: flex-end; }
+.translate-btn:hover:not(:disabled) { color: var(--text); }
+
+.translation {
+  margin: 0.35rem 0 0;
+  padding: 0.5rem 0.7rem;
+  background: #14181f;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+  border-radius: 6px;
+  font-size: 0.88rem;
+  color: var(--text);
+  font-style: italic;
+}
+
+/* ---------- level picker ---------- */
+.level-picker { margin-bottom: 0.4rem; }
+
+.level-label {
+  display: block;
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-bottom: 0.3rem;
+}
+
+.level-opts { display: flex; gap: 0.25rem; }
+.level-opts button {
+  flex: 1;
+  font-size: 0.72rem;
+  padding: 0.25rem 0;
+  border-radius: 6px;
+  color: var(--muted);
+}
+.level-opts button.active {
+  color: var(--text);
+  border-color: var(--accent);
+  background: #241a20;
+}
+.auto-mark { color: var(--accent); }
+
 /* ---------- narrow ---------- */
 @media (max-width: 720px) {
   .layout { flex-direction: column; }

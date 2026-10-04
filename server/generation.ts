@@ -56,28 +56,59 @@ function applyCloze(ex: Exercise): Exercise | null {
   target = target.replace(/[.!?…]+$/, "");
   if (!target) return null;
 
-  // The prompt asks for a complete sentence, but gemma3:4b sometimes inserts
-  // blanks anyway. Strip them first, otherwise blanking a word yields two gaps
-  // and the learner cannot tell which one to fill.
-  const cleaned = ex.prompt.replace(/_{2,}/g, " ").replace(/\s{2,}/g, " ").trim();
-  if (!cleaned) return null;
-  const words = cleaned.split(/\s+/);
+  // gemma3:4b is asked for a complete sentence but sometimes blanks one itself.
+  // Record where it put the gap before removing it: that position is often the
+  // correct one, and it carries information we would otherwise throw away.
+  const rawWords = ex.prompt.trim().split(/\s+/);
+  let modelBlank = -1;
+  rawWords.forEach((w, i) => {
+    if (modelBlank === -1 && w.includes("_")) modelBlank = i;
+  });
 
-  let idx = words.findIndex((w) => {
-    const clean = w.replace(/[^\p{L}]/gu, "").toLowerCase();
+  // Two cases, and which branch we take decides whether the answer is right.
+  //
+  // 1. The model already inserted a gap. That gap is where its own `answer`
+  //    belongs, so we keep both — the model already solved this one.
+  // 2. No gap: the sentence is complete, so we blank the word matching `answer`
+  //    ourselves, falling back to a content word if the answer isn't present.
+  if (modelBlank !== -1) {
+    const words = [...rawWords];
+    const punctuation = words[modelBlank].match(/[^\p{L}\p{N}_]+$/u)?.[0] ?? "";
+    words[modelBlank] = `___${punctuation}`;
+    // Lowercase the retained answer: it is displayed as the correct answer, and
+    // the source word may have been given in capitals.
+    const answer = target.replace(/[^\p{L}\p{N}]/gu, "").toLowerCase();
+    if (!answer) return null;
+    return { ...ex, prompt: words.join(" ").trim(), answer };
+  }
+
+  const cleaned = rawWords.join(" ").trim();
+  if (!cleaned) return null;
+
+  // NFC first: the model may emit a combining accent where the seed data uses a
+  // precomposed codepoint, which would otherwise look like a mismatched word.
+  target = target.normalize("NFC");
+
+  let idx = rawWords.findIndex((w) => {
+    const clean = w.normalize("NFC").replace(/[^\p{L}]/gu, "").toLowerCase();
     return clean === target.toLowerCase();
   });
 
   if (idx === -1) {
     idx = pickBlankIndex(cleaned);
     if (idx === -1) return null;
-    target = words[idx].replace(/[^\p{L}\p{N}]/gu, "");
+    target = rawWords[idx].normalize("NFC").replace(/[^\p{L}\p{N}]/gu, "");
   }
 
+  // The answer is shown to the learner as the correct form, so normalise it to
+  // sentence case regardless of how the model capitalised it.
+  target = target.toLowerCase();
   if (!target) return null;
 
-  const blanked = [...words];
-  blanked[idx] = "___";
+  const blanked = [...rawWords];
+  // Keep trailing punctuation: blanking the final word must not eat the period.
+  const punctuation = blanked[idx].match(/[^\p{L}\p{N}]+$/u)?.[0] ?? "";
+  blanked[idx] = `___${punctuation}`;
   return { ...ex, prompt: blanked.join(" "), answer: target };
 }
 
@@ -152,6 +183,7 @@ export async function generate(
 
     if (!ollamaRes.ok) throw new Error(`Ollama responded ${ollamaRes.status}`);
     const data = (await ollamaRes.json()) as { response?: string };
+    console.log(data);
     const exercises = parseExercises(data.response ?? "", type);
 
     return { source: exercises.length ? "generated" : "empty", exercises };

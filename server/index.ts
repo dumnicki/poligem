@@ -1,7 +1,8 @@
 import express from "express";
 import cors from "cors";
 import { OLLAMA_URL, MODEL, PORT } from "./config.js";
-import { SYSTEM_PROMPT } from "./prompt.js";
+import { DEFAULT_LEVEL, GREETING, TRANSLATE_SYSTEM, tutorPrompt } from "./prompt.js";
+import { isLevel } from "../shared/levels.js";
 import { EXERCISE_TYPES, type ExerciseType } from "./exercisePrompt.js";
 import { peekDepth, reportAnswer, status, take, warmAll } from "./pool.js";
 import { enqueue, generate } from "./generation.js";
@@ -38,6 +39,7 @@ app.post("/api/chat", async (req, res) => {
   const history: IncomingMessage[] = Array.isArray(req.body?.messages)
     ? req.body.messages
     : [];
+  const level = isLevel(req.body?.level) ? req.body.level : DEFAULT_LEVEL;
 
   try {
     const ollamaRes = await fetch(`${OLLAMA_URL}/api/chat`, {
@@ -45,7 +47,7 @@ app.post("/api/chat", async (req, res) => {
       headers: { "Content-Type": "application/json; charset=utf-8" },
       body: JSON.stringify({
         model: MODEL,
-        messages: [{ role: "system", content: SYSTEM_PROMPT }, ...history],
+        messages: [{ role: "system", content: tutorPrompt(level) }, ...history],
         stream: true,
         options: { temperature: 0.7, num_predict: 300 },
       }),
@@ -123,6 +125,77 @@ app.post("/api/exercise/generate", async (req, res) => {
   }
   const count = Math.min(Math.max(Number(req.body?.count ?? 3) || 3, 1), 8);
   res.json(await enqueue(() => generate(type, count, [])));
+});
+
+/**
+ * Translates one Polish utterance into English for the Translate button.
+ *
+ * Separate from /api/chat on purpose: a single-purpose prompt with no persona is
+ * much more reliable at returning a bare translation than asking the role-playing
+ * tutor to break character on demand.
+ */
+app.post("/api/chat/translate", async (req, res) => {
+  const polish = typeof req.body?.polish === "string" ? req.body.polish.trim() : "";
+  if (!polish) {
+    res.status(400).json({ error: "polish is required" });
+    return;
+  }
+
+  try {
+    const r = await fetch(`${OLLAMA_URL}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({
+        model: MODEL,
+        system: TRANSLATE_SYSTEM,
+        prompt: polish,
+        stream: false,
+        options: { temperature: 0.2, num_predict: 120 },
+      }),
+    });
+    if (!r.ok) throw new Error(`Ollama responded ${r.status}`);
+    const data = (await r.json()) as { response?: string };
+    res.json({ english: (data.response ?? "").trim() });
+  } catch (err) {
+    res.status(502).json({ error: String(err) });
+  }
+});
+
+/** Opens a scenario at the given level, used for "New situation". */
+app.post("/api/chat/scenario", async (req, res) => {
+  const level = isLevel(req.body?.level) ? req.body.level : DEFAULT_LEVEL;
+
+  const prompts = [
+    "Zaproponuj jedną krótką sytuację do przećwiczenia po polsku. Zacznij od zwrotu Ćwiczmy sytuację i podaj w cudzysłowie polskie zdanie, które usłyszy uczeń. Maksymalnie 3 zdania.",
+    "Zaproponuj jedną krótką sytuację: rozmowa w kawiarni. Zacznij od zwrotu Ćwiczmy sytuację i podaj w cudzysłowie polskie zdanie kelnera. Maksymalnie 3 zdania.",
+    "Zaproponuj jedną krótką sytuację: zakupy w sklepie. Zacznij od zwrotu Ćwiczmy sytuację i podaj w cudzysłowie polskie zdanie sprzedawcy. Maksymalnie 3 zdania.",
+    "Zaproponuj jedną krótką sytuację: rozmowa z lekarzem. Zacznij od zwrotu Ćwiczmy sytuację i podaj w cudzysłowie polskie zdanie lekarza. Maksymalnie 3 zdania.",
+    "Zaproponuj jedną krótką sytuację: pierwszy dzień w pracy z nowym współpracownikiem. Zacznij od zwrotu Ćwiczmy sytuację i podaj w cudzysłowie polskie zdanie kolegi z pracy. Maksymalnie 3 zdania.",
+    "Zaproponuj jedną krótką sytuację: pytanie o drogę na dworcu. Zacznij od zwrotu Ćwiczmy sytuację i podaj w cudzysłowie polskie zdanie kogoś ze wsi. Maksymalnie 3 zdania.",
+  ];
+  const topic = Math.floor(Math.random() * prompts.length);
+
+  try {
+    const r = await fetch(`${OLLAMA_URL}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({
+        model: MODEL,
+        messages: [
+          { role: "system", content: tutorPrompt(level) },
+          { role: "user", content: prompts[topic - 1] },
+        ],
+        stream: false,
+        options: { temperature: 0.8, num_predict: 160 },
+      }),
+    });
+    if (!r.ok) throw new Error(`Ollama responded ${r.status}`);
+    const data = (await r.json()) as { message?: { content?: string } };
+    res.json({ text: (data.message?.content ?? "").trim() || GREETING });
+  } catch (err) {
+    // The UI still works without a generated scenario.
+    res.json({ text: GREETING, error: String(err) });
+  }
 });
 
 app.listen(PORT, () => {

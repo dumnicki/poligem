@@ -3,7 +3,11 @@ import { getHealth } from "./api";
 import Chat from "./components/Chat";
 import Exercises from "./components/Exercises";
 import Progress from "./components/Progress";
+import { allAttempts } from "./store";
+import { LEVELS, LEVEL_NAMES, deriveLevel, isLevel, type Level } from "../shared/levels";
 import type { Health } from "./types";
+
+const LEVEL_KEY = "poligem.level.v1";
 
 type Tab = "chat" | "exercises" | "progress";
 
@@ -16,6 +20,16 @@ const TABS: { id: Tab; icon: string; label: string; hint: string }[] = [
 export default function App() {
   const [tab, setTab] = useState<Tab>("chat");
   const [health, setHealth] = useState<Health | null>(null);
+  // null until a stored override is read; then the level follows measured accuracy.
+  const [override, setOverride] = useState<Level | null>(() => {
+    try {
+      const raw = localStorage.getItem(LEVEL_KEY);
+      return isLevel(raw) ? raw : null;
+    } catch {
+      return null;
+    }
+  });
+  const [attemptCount, setAttemptCount] = useState(0);
 
   useEffect(() => {
     getHealth()
@@ -24,6 +38,27 @@ export default function App() {
         setHealth({ ok: false, model: "-", error: "Cannot reach the poligem server" }),
       );
   }, []);
+
+  // Re-derive when the exercise count changes, so a bad run adjusts the level.
+  useEffect(() => {
+    const onFocus = () => setAttemptCount(allAttempts().length);
+    onFocus();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
+
+  const auto = deriveLevel(allAttempts().slice(-20));
+  const level = override ?? auto;
+
+  function pickLevel(next: Level) {
+    setOverride(next);
+    try {
+      if (next === auto) localStorage.removeItem(LEVEL_KEY);
+      else localStorage.setItem(LEVEL_KEY, next);
+    } catch {
+      // storage unavailable — the choice still applies for this session
+    }
+  }
 
   const modelMissing = health?.ok && health.modelPresent === false;
 
@@ -52,6 +87,23 @@ export default function App() {
         </div>
 
         <div className="side-foot">
+          <div className="level-picker" title={override ? "Level set by you" : "Level follows your accuracy"}>
+            <span className="level-label">Level</span>
+            <div className="level-opts">
+              {LEVELS.map((l) => (
+                <button
+                  key={l}
+                  className={level === l ? "active" : ""}
+                  onClick={() => pickLevel(level === l && override ? (auto as Level) : l)}
+                  title={level === l && !override ? "Automatic, from your accuracy" : LEVEL_NAMES[l]}
+                >
+                  {l}
+                  {level === l && override === null && <span className="auto-mark">·</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {health === null ? (
             <span className="dot checking">checking…</span>
           ) : health.ok ? (
@@ -82,7 +134,7 @@ export default function App() {
           every time the user glances at their progress.
         */}
         <div className="panel" hidden={tab !== "chat"}>
-          <Chat />
+          <Chat key={level} level={level} />
         </div>
         <div className="panel" hidden={tab !== "exercises"}>
           <Exercises />

@@ -1,3 +1,4 @@
+import type { Level } from "../shared/levels";
 import type { ChatMessage, Exercise, ExerciseType, Health } from "./types";
 
 export async function getHealth(): Promise<Health> {
@@ -13,12 +14,13 @@ export async function getHealth(): Promise<Health> {
  */
 export async function* streamChat(
   messages: ChatMessage[],
+  level: Level,
   signal?: AbortSignal,
 ): AsyncGenerator<string> {
   const res = await fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json; charset=utf-8" },
-    body: JSON.stringify({ messages }),
+    body: JSON.stringify({ messages, level }),
     signal,
   });
 
@@ -82,4 +84,28 @@ export async function reportAnswer(prompt: string, correct: boolean): Promise<vo
   } catch {
     // Reporting is an optimisation, not a requirement — never surface a failure.
   }
+}
+
+/** Asks the tutor to open a fresh scenario at the given level. */
+export async function getScenario(level: Level): Promise<{ text: string }> {
+  const res = await fetch("/api/chat/scenario", {
+    method: "POST",
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+    body: JSON.stringify({ level }),
+  });
+  const data = await res.json();
+  if (!data?.text) throw new Error(data?.error ?? "Could not start a scenario");
+  return data;
+}
+
+/** Translates one Polish utterance into English, for the EN button. */
+export async function translate(polish: string): Promise<{ english: string }> {
+  const res = await fetch("/api/chat/translate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+    body: JSON.stringify({ polish }),
+  });
+  const data = await res.json();
+  if (!data?.english) throw new Error(data?.error ?? "Translation failed");
+  return data;
 }

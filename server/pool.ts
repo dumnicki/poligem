@@ -72,17 +72,30 @@ export function weaknessSnapshot(): { prompt: string; misses: number; correct: n
     .sort((a, b) => b.misses - a.misses);
 }
 
+/**
+ * Minimum generation batch.
+ *
+ * Asking for a single exercise measurably degrades quality: cloze sentences came
+ * back as fragments with meaningless gaps ("Nie rozumiem, ___ mówi on"). gemma3:4b
+ * needs a few examples in front of it to imitate structure, so refills always
+ * request a small batch even when only one slot is open.
+ */
+const MIN_BATCH = 3;
+
 /** Schedules a top-up if this type is below target. Never blocks the caller. */
 function ensure(type: ExerciseType): void {
   const s = state(type);
   const need = POOL_TARGET - (s.items.length + s.pending);
   if (need <= 0) return;
 
-  s.pending += need;
+  // Generate at least a batch, capped so a long-idle server cannot ask for an
+  // unbounded amount of work in one go.
+  const ask = Math.min(Math.max(need, MIN_BATCH), POOL_TARGET * 2);
+  s.pending += ask;
 
   void enqueue(async () => {
     try {
-      const { exercises } = await generate(type, need, weakHints());
+      const { exercises } = await generate(type, ask, weakHints());
       if (exercises.length > 0) {
         const s2 = state(type);
         // Guard against the model repeating itself or echoing something already queued.
@@ -101,7 +114,7 @@ function ensure(type: ExerciseType): void {
       state(type).lastError = String(err);
     } finally {
       // Must happen on every path or the pool stalls forever after one failure.
-      state(type).pending -= need;
+      state(type).pending -= ask;
     }
   });
 }
