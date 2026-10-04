@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { fetchExercises } from "../api";
 import { grade, type Verdict } from "../grade";
+import {
+  getExercises,
+  isWarmed,
+  peek,
+  prefetch,
+  replaceAt,
+  setAt,
+  sourceOf,
+} from "../exerciseCache";
 import {
   allAttempts,
   computeStats,
@@ -8,48 +16,82 @@ import {
   weakPrompts,
   type Stats,
 } from "../store";
-import type { Attempt, Exercise, ExerciseType } from "../types";
+import type { Exercise, ExerciseType } from "../types";
 
-const TYPES: { id: ExerciseType; label: string; blurb: string }[] = [
-  { id: "en2pl", label: "English → Polish", blurb: "Read Polish, say it in English" },
-  { id: "pl2en", label: "Polish → English", blurb: "Read English, say it in Polish" },
-  { id: "cloze", label: "Fill the gap", blurb: "One missing word in a Polish sentence" },
+const TYPES: { id: ExerciseType; label: string }[] = [
+  { id: "en2pl", label: "English → Polish" },
+  { id: "pl2en", label: "Polish → English" },
+  { id: "cloze", label: "Fill the gap" },
 ];
+
+const BATCH = 5;
 
 export default function Exercises() {
   const [type, setType] = useState<ExerciseType>("en2pl");
-  const [queue, setQueue] = useState<Exercise[]>([]);
   const [index, setIndex] = useState(0);
   const [value, setValue] = useState("");
   const [verdict, setVerdict] = useState<Verdict | null>(null);
   const [revealed, setRevealed] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [source, setSource] = useState<"generated" | "seed" | null>(null);
+  const [loading, setLoading] = useState(() => !isWarmed("en2pl"));
+  const [source, setSource] = useState<"generated" | "seed" | null>(() =>
+    sourceOf("en2pl"),
+  );
   const [stats, setStats] = useState<Stats | null>(null);
   const [score, setScore] = useState({ right: 0, wrong: 0 });
+  const [warming, setWarming] = useState(false);
 
-  const current = queue[index] ?? null;
+  const current: Exercise | undefined = setAt(type, index);
 
-  const load = useCallback(async (t: ExerciseType) => {
-    setLoading(true);
+  // Draw straight from the cache first so switching tabs is instant.
+  useEffect(() => {
+    const cached = peek(type);
+    if (cached) {
+      setLoading(false);
+      setSource(sourceOf(type));
+    } else {
+      setLoading(true);
+    }
+    setIndex(0);
+    setValue("");
     setVerdict(null);
     setRevealed(false);
-    setValue("");
-    try {
-      const set = await fetchExercises(t, 5, weakPrompts());
-      setQueue(set.exercises);
-      setSource(set.source);
-      setIndex(0);
-    } catch {
-      setQueue([]);
-      setSource("seed");
-    } finally {
-      setLoading(false);
-    }
+  }, [type]);
+
+  // Warm every type once, sequentially, so later switches are instant.
+  useEffect(() => {
+    const missing = TYPES.filter((t) => !isWarmed(t.id)).map((t) => t.id);
+    if (missing.length === 0) return;
+
+    let cancelled = false;
+    setWarming(true);
+    void prefetch(missing, BATCH, weakPrompts()).then(() => {
+      if (cancelled) return;
+      setWarming(false);
+      setSource(sourceOf(type));
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const load = useCallback(
+    async (t: ExerciseType) => {
+      setLoading(true);
+      try {
+        await getExercises(t, BATCH, weakPrompts());
+        setSource(sourceOf(t));
+      } catch {
+        /* keep whatever is cached */
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
-    void load(type);
+    if (!isWarmed(type) && !peek(type)) void load(type);
   }, [type, load]);
 
   function submit(e: FormEvent) {
@@ -61,36 +103,60 @@ export default function Exercises() {
     setVerdict(result);
     setRevealed(true);
 
-    const attempt: Omit<Attempt, "at"> = {
+    recordAttempt({
       type: current.type,
       prompt: current.prompt,
       answer: current.answer,
       correct: ok,
-    };
-    recordAttempt(attempt);
+    });
     setScore((s) => ({ right: s.right + (ok ? 1 : 0), wrong: s.wrong + (ok ? 0 : 1) }));
     setStats(computeStats(allAttempts()));
   }
 
+  /**
+   * Wrong answers are replaced by a fresh generated exercise for the same slot,
+   * so the learner meets new material instead of memorising the miss. The
+   * replacement is fetched per-slot and swapped in when it arrives.
+   */
   function advance() {
+    const wasWrong = verdict === "wrong";
+
     setVerdict(null);
     setRevealed(false);
     setValue("");
-    if (index + 1 < queue.length) setIndex(index + 1);
-    else void load(type);
+
+    const advanceIndex = () => {
+      if (index + 1 < (peek(type)?.length ?? 0)) setIndex(index + 1);
+      else void load(type);
+    };
+
+    if (wasWrong && current) {
+      const slot = index;
+      const replacement = getExercises(type, 1, [...weakPrompts(), current.prompt], true);
+      void replacement
+        .then(([fresh]) => {
+          if (fresh) replaceAt(type, slot, { ...fresh, type });
+        })
+        .catch(() => undefined);
+    }
+
+    advanceIndex();
   }
 
-  const done = !loading && queue.length === 0;
+  const total = peek(type)?.length ?? 0;
 
   return (
     <>
       <div className="panel-head">
         <h2>Exercises</h2>
-        {source && (
-          <span className={`badge-src ${source}`}>
-            {source === "generated" ? "generated by gemma3" : "built-in set"}
-          </span>
-        )}
+        <div className="head-right">
+          {warming && <span className="warming">preparing other types…</span>}
+          {source && (
+            <span className={`badge-src ${source}`}>
+              {source === "generated" ? "generated by gemma3" : "built-in set"}
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="type-tabs">
@@ -101,24 +167,28 @@ export default function Exercises() {
             onClick={() => setType(t.id)}
           >
             {t.label}
+            {isWarmed(t.id) && <span className="tick">•</span>}
           </button>
         ))}
       </div>
 
       <div className="exercise-body">
-        {loading && (
+        {loading && !current && (
           <p className="muted">
-            Generating exercises… (first call after idle loads the model, expect ~10s)
+            Generating exercises with gemma3 — first call after idle loads the model,
+            expect up to ~30s.
           </p>
         )}
 
-        {done && <p className="muted">No exercises available. Is Ollama running?</p>}
+        {!loading && !current && (
+          <p className="muted">No exercises available. Is Ollama running?</p>
+        )}
 
-        {current && !loading && (
+        {current && (
           <>
             <div className="progress-line">
               <span>
-                {index + 1} / {queue.length}
+                {index + 1} / {total}
               </span>
               <span className="score">
                 ✓ {score.right} · ✗ {score.wrong}
@@ -161,7 +231,9 @@ export default function Exercises() {
                   {verdict === "wrong" && "Poprawna odpowiedź: "}
                   <strong>{current.answer}</strong>
                 </p>
-                {current.explanation && <p className="explain">{current.explanation}</p>}
+                {current.explanation && (
+                  <p className="explain">{current.explanation}</p>
+                )}
               </div>
             )}
           </>

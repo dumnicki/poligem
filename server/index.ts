@@ -2,8 +2,9 @@ import express from "express";
 import cors from "cors";
 import { SYSTEM_PROMPT } from "./prompt.js";
 import {
-  EXERCISE_SYSTEM_PROMPT,
   buildExercisePrompt,
+  systemPromptFor,
+  numPredictFor,
   EXERCISE_TYPES,
   type Exercise,
   type ExerciseType,
@@ -130,7 +131,11 @@ function applyCloze(ex: Exercise): Exercise | null {
   target = target.replace(/[.!?…]+$/, "");
   if (!target) return null;
 
-  const words = ex.prompt.trim().split(/\s+/);
+  // The prompt asks for a complete sentence, but gemma3:4b sometimes inserts
+  // blanks anyway. Strip them first, otherwise blanking a word yields two gaps
+  // and the learner cannot tell which one to fill.
+  const cleaned = ex.prompt.replace(/_{2,}/g, " ").replace(/\s{2,}/g, " ").trim();
+  const words = cleaned.split(/\s+/);
 
   let idx = words.findIndex((w) => {
     const clean = w.replace(/[^\p{L}]/gu, "").toLowerCase();
@@ -138,7 +143,7 @@ function applyCloze(ex: Exercise): Exercise | null {
   });
 
   if (idx === -1) {
-    idx = pickBlankIndex(ex.prompt);
+    idx = pickBlankIndex(cleaned);
     if (idx === -1) return null;
     target = words[idx].replace(/[^\p{L}\p{N}]/gu, "");
   }
@@ -195,6 +200,16 @@ function parseExercises(raw: string, type: ExerciseType): Exercise[] {
   return out;
 }
 
+/**
+ * Only one exercise generation may be in flight at a time.
+ *
+ * gemma3:4b on this machine produces roughly one token every 120ms on CPU. Two
+ * concurrent requests do not run in parallel, they interleave and both get
+ * slower — a second request would also delay a chat reply. Queueing here is
+ * simpler and more predictable than trying to manage it in the browser.
+ */
+let exerciseQueue: Promise<unknown> = Promise.resolve();
+
 app.post("/api/exercise", async (req, res) => {
   const type = req.body?.type as ExerciseType;
   const count = Math.min(Math.max(Number(req.body?.count ?? 5) || 5, 1), 10);
@@ -207,18 +222,35 @@ app.post("/api/exercise", async (req, res) => {
     return;
   }
 
+  const run = exerciseQueue.then(() => generateExercises(type, count, weakWords));
+  // Keep the chain alive regardless of outcome, or one failure blocks all future
+  // generations behind a rejected promise.
+  exerciseQueue = run.catch(() => undefined);
+
+  const result = await run;
+  res.json(result);
+});
+
+async function generateExercises(
+  type: ExerciseType,
+  count: number,
+  weakWords: string[],
+): Promise<{
+  source: "generated" | "seed";
+  type: ExerciseType;
+  exercises: Exercise[];
+  error?: string;
+}> {
   try {
     const ollamaRes = await fetch(`${OLLAMA_URL}/api/generate`, {
       method: "POST",
       headers: { "Content-Type": "application/json; charset=utf-8" },
       body: JSON.stringify({
         model: MODEL,
-        system: EXERCISE_SYSTEM_PROMPT,
+        system: systemPromptFor(type),
         prompt: buildExercisePrompt(type, count, weakWords),
         stream: false,
-        // Capped deliberately: at num_predict 900 the model rambles to the cap and
-        // a 3-exercise request took 188s. 450 covers 5 exercises of JSON comfortably.
-        options: { temperature: 0.85, num_predict: 450 },
+        options: { temperature: 0.8, num_predict: numPredictFor(type) },
       }),
     });
 
@@ -228,17 +260,20 @@ app.post("/api/exercise", async (req, res) => {
 
     // Generation failed or came back unusable — serve the curated pool instead
     // of an error screen, so the UI is always demonstrable.
-    const source = exercises.length > 0 ? "generated" : "seed";
     if (exercises.length === 0) {
       exercises = [...SEED_EXERCISES[type]].slice(0, count);
     }
 
-    res.json({ source, type, exercises });
+    return { source: exercises.length > 0 ? "generated" : "seed", type, exercises };
   } catch (err) {
-    const exercises = [...SEED_EXERCISES[type]].slice(0, count);
-    res.json({ source: "seed", type, exercises, error: String(err) });
+    return {
+      source: "seed",
+      type,
+      exercises: [...SEED_EXERCISES[type]].slice(0, count),
+      error: String(err),
+    };
   }
-});
+}
 
 app.listen(PORT, () => {
   console.log(`poligem server  http://localhost:${PORT}`);
