@@ -17,6 +17,8 @@ import { SEED_EXERCISES } from "./seedExercises.js";
  */
 
 type PoolState = {
+  /** Generated exercises only. Seeds are never mixed in, so taking from the
+   * pool always prefers real generated material when any exists. */
   items: Exercise[];
   /** Generations currently in flight for this type, so we don't over-ask. */
   pending: number;
@@ -108,11 +110,9 @@ function ensure(type: ExerciseType): void {
 const seedCursor = new Map<ExerciseType, number>();
 
 /**
- * Takes one exercise. Served from the pool; falls back to the curated set if
- * generation has never succeeded, so this never returns empty.
- *
- * The fallback rotates rather than always returning index 0 — otherwise a user
- * who outruns generation sees the same sentence five times in a row.
+ * Takes one exercise. Generated material is always preferred; the curated set is
+ * only used while the pool is still empty (during warm-up, or if Ollama is
+ * down), and rotates so the same sentence is never shown twice in a row.
  */
 export function take(type: ExerciseType): { exercise: Exercise; source: "generated" | "seed" } {
   const s = state(type);
@@ -153,20 +153,14 @@ export function status() {
 }
 
 /**
- * Fills every pool with seeds immediately, then queues generation to replace
- * them. Called once at boot.
+ * Queues generation for every type at boot.
+ *
+ * Deliberately does not prefill the pool with seeds: `take` already falls back
+ * to the curated set while the pool is empty, and it rotates, so warm-up is
+ * covered without seeds ever competing with generated material for a slot.
  */
 export function warmAll(): void {
   for (const type of EXERCISE_TYPES) {
-    const s = state(type);
-    if (s.items.length === 0) {
-      // Fill to target from the curated set. `ensure` has already queued
-      // generation for the full target, so every one of these seeds is later
-      // replaced by a generated exercise rather than being added on top.
-      const seeds = SEED_EXERCISES[type].slice(0, POOL_TARGET);
-      s.items.push(...seeds);
-      s.seeds += seeds.length;
-    }
     ensure(type);
   }
 }
