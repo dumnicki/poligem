@@ -1,16 +1,28 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { getScenario, streamChat, translate } from "../api";
 import type { Level } from "../../shared/levels";
+import {
+  FALLBACK_INTRO,
+  GREETING,
+  SCENARIO_FAILED,
+  STARTER_PROMPTS,
+} from "../../shared/copy";
 import type { ChatMessage } from "../types";
 
-const SUGGESTIONS = ["Cześć, jak się masz?", "Poproszę kawę.", "Co to znaczy?"];
-
 export default function Chat({ level }: { level: Level }) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // Start with the static greeting so the panel is never empty, then let the
+  // generated scenario replace it. Generating first meant a ~30s blank wait.
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    { role: "assistant", content: GREETING },
+  ]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [loadingScenario, setLoadingScenario] = useState(true);
+  // Translations are cached permanently and never dropped, so re-opening one
+  // costs nothing. `shown` only tracks which are currently visible.
   const [translations, setTranslations] = useState<Record<number, string>>({});
+  const [shown, setShown] = useState<Record<number, boolean>>({});
+  const [translating, setTranslating] = useState<Record<number, boolean>>({});
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -19,23 +31,20 @@ export default function Chat({ level }: { level: Level }) {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, busy]);
 
-  // Open a scenario on mount so the learner never faces a blank page.
+  // Generate a scenario on mount, but leave the static greeting on screen while
+  // it runs. The panel is readable immediately and upgrades itself when ready.
   useEffect(() => {
     let cancelled = false;
     getScenario(level)
       .then(({ text }) => {
-        if (!cancelled) setMessages([{ role: "assistant", content: text }]);
+        if (!cancelled) {
+          setMessages([{ role: "assistant", content: text }]);
+          setShown({});
+          setTranslations({});
+        }
       })
       .catch(() => {
-        if (!cancelled) {
-          setMessages([
-            {
-              role: "assistant",
-              content:
-                "Hej! Jestem twoim polskim rozmówcą. Napisz do mnie po polsku, a poprawię cię po cichu.",
-            },
-          ]);
-        }
+        // Keep the greeting; it is a perfectly good fallback.
       })
       .finally(() => {
         if (!cancelled) setLoadingScenario(false);
@@ -83,6 +92,9 @@ export default function Chat({ level }: { level: Level }) {
       setBusy(false);
       abortRef.current = null;
     }
+
+    // The learner has taken over the conversation; drop the openers.
+    setShown({});
   }
 
   function stop() {
@@ -95,35 +107,41 @@ export default function Chat({ level }: { level: Level }) {
     abortRef.current?.abort();
     setLoadingScenario(true);
     setTranslations({});
+    setShown({});
     setInput("");
+    setMessages([{ role: "assistant", content: GREETING }]);
     try {
       const { text } = await getScenario(level);
       setMessages([{ role: "assistant", content: text }]);
     } catch {
-      setMessages([
-        { role: "assistant", content: "Nie udało się wczytać sytuacji. Spróbujmy jeszcze raz." },
-      ]);
+      setMessages([{ role: "assistant", content: SCENARIO_FAILED }]);
     } finally {
       setLoadingScenario(false);
       setBusy(false);
     }
   }
 
-  async function toggleTranslation(index: number, polish: string) {
-    if (translations[index]) {
-      setTranslations((t) => {
-        const next = { ...t };
-        delete next[index];
-        return next;
-      });
+  /**
+   * Shows or hides the English translation.
+   *
+   * The cached string is kept when hidden, so re-opening is instant and costs
+   * no model call. Only a first open per message actually translates.
+   */
+  function toggleTranslation(index: number, polish: string) {
+    if (shown[index]) {
+      setShown((s) => ({ ...s, [index]: false }));
       return;
     }
-    try {
-      const { english } = await translate(polish);
-      setTranslations((t) => ({ ...t, [index]: english }));
-    } catch {
-      setTranslations((t) => ({ ...t, [index]: "— translation unavailable —" }));
-    }
+
+    setShown((s) => ({ ...s, [index]: true }));
+
+    if (translations[index] || translating[index]) return;
+
+    setTranslating((t) => ({ ...t, [index]: true }));
+    translate(polish)
+      .then(({ english }) => setTranslations((t) => ({ ...t, [index]: english })))
+      .catch(() => setTranslations((t) => ({ ...t, [index]: "— translation unavailable —" })))
+      .finally(() => setTranslating((t) => ({ ...t, [index]: false })));
   }
 
   return (
@@ -148,12 +166,26 @@ export default function Chat({ level }: { level: Level }) {
               <>
                 <button
                   className="translate-btn"
-                  onClick={() => void toggleTranslation(i, m.content)}
-                  disabled={busy}
+                  onClick={() => toggleTranslation(i, m.content)}
+                  disabled={busy || translating[i]}
+                  aria-busy={translating[i] || undefined}
                 >
-                  {translations[i] ? "Hide English" : "EN"}
+                  {translating[i] ? (
+                    <>
+                      <span className="spinner" aria-hidden="true" /> Translating…
+                    </>
+                  ) : shown[i] ? (
+                    "Hide English"
+                  ) : (
+                    "EN"
+                  )}
                 </button>
-                {translations[i] && <p className="translation">{translations[i]}</p>}
+                {shown[i] && translating[i] && (
+                  <p className="translation pending">Translating…</p>
+                )}
+                {shown[i] && !translating[i] && translations[i] && (
+                  <p className="translation">{translations[i]}</p>
+                )}
               </>
             )}
           </div>
@@ -175,13 +207,17 @@ export default function Chat({ level }: { level: Level }) {
         <div ref={bottomRef} />
       </div>
 
-      <div className="suggestions">
-        {SUGGESTIONS.map((s) => (
-          <button key={s} onClick={() => void send(s)} disabled={busy}>
-            {s}
-          </button>
-        ))}
-      </div>
+      {/* Openers only while the conversation is still new; they stop making
+          sense once the learner has started their own scenario. */}
+      {messages.length <= 1 && !loadingScenario && (
+        <div className="suggestions">
+          {STARTER_PROMPTS.map((s) => (
+            <button key={s} onClick={() => void send(s)} disabled={busy}>
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
 
       <form
         className="composer"
