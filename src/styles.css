@@ -227,6 +227,18 @@ code {
   overflow-wrap: anywhere;
 }
 
+/*
+ * Empty bubble awaiting the first token of a streamed reply. Kept in the layout
+ * so the "poligem" label does not jump when text arrives, but invisible — an
+ * empty bordered box above the thinking dots reads as a duplicate bubble.
+ */
+.msg p.placeholder {
+  padding: 0;
+  min-height: 1.55em;
+  background: transparent;
+  border-color: transparent;
+}
+
 .msg.user p { background: #1f2937; border-color: #333c4d; }
 
 .thinking { display: flex; gap: 0.35rem; padding: 0.9rem 1rem !important; }

@@ -177,9 +177,19 @@ export default function Chat({ level }: { level: Level }) {
         )}
 
         {messages.map((m, i) => (
-          <div key={i} className={`msg ${m.role}`}>
+          <div key={i} className={`msg ${m.role} ${!m.content ? "pending" : ""}`}>
             <span className="who">{m.role === "user" ? "you" : "poligem"}</span>
-            <p>{m.content}</p>
+            {/*
+              While a reply streams in, its bubble is still empty. Giving it a
+              border and padding renders a second, empty box right above the
+              thinking indicator, so the placeholder is borderless until there
+              is actually text to show.
+            */}
+            {m.content ? (
+              <p>{m.content}</p>
+            ) : (
+              <p className="placeholder" aria-hidden="true" />
+            )}
             {m.role === "assistant" && m.content && (
               <>
                 <button
